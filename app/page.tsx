@@ -2,89 +2,69 @@
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import React, { useState, useEffect, FormEvent } from "react";
-import { FaEdit, FaTrash, FaCheck } from "react-icons/fa";
+import { useState } from "react";
+import { useLocalStorage } from "@/hooks/useLocalStorage";
+import { Task } from "@/types/task";
+import { EditTaskDialog } from "@/components/EditTaskDialog";
+import { TaskItem } from "@/components/TaskItem";
+import { useForm } from "react-hook-form";
+import { z } from "zod";
+import { zodResolver } from "@hookform/resolvers/zod";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormMessage,
+} from "@/components/ui/form";
 
-interface Task {
-  id: number;
-  name: string;
-  completed?: boolean;
-  createdAt: Date;
-}
+// Définition du schéma de validation avec Zod
+const taskSchema = z.object({
+  name: z
+    .string({
+      required_error: "Le nom de la tâche est requis",
+      invalid_type_error:
+        "Le nom de la tâche doit être une chaîne de caractères",
+    })
+    .min(4, { message: "Le nom de la tâche doit avoir au moins 4 caractères" }),
+  completed: z.boolean().optional(),
+});
+
+// Type inféré à partir du schéma Zod
+type TaskFormValues = z.infer<typeof taskSchema>;
 
 export default function Home() {
-  const [tasks, setTasks] = useState<Task[]>([]);
+  const [tasks, setTasks] = useLocalStorage<Task[]>("tasks", []);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [newTaskName, setNewTaskName] = useState<string>("");
   const [dialogOpen, setDialogOpen] = useState(false);
 
-  // Charger les tâches depuis le localStorage au chargement du composant
-  useEffect(() => {
-    const storedTasks = localStorage.getItem("tasks");
-    if (storedTasks) {
-      try {
-        const parsedTasks = JSON.parse(storedTasks);
-        // Conversion des dates stockées en objets Date
-        setTasks(
-          parsedTasks.map((task: any) => ({
-            ...task,
-            createdAt: new Date(task.createdAt),
-          }))
-        );
-      } catch (error) {
-        console.error("Erreur lors du chargement des tâches:", error);
-      }
-    }
-  }, []);
+  // Configuration du formulaire avec react-hook-form et Zod
+  const form = useForm<TaskFormValues>({
+    resolver: zodResolver(taskSchema),
+  });
 
-  // Sauvegarder dans localStorage chaque fois que tasks change
-  useEffect(() => {
-    localStorage.setItem("tasks", JSON.stringify(tasks));
-  }, [tasks]);
+  const addTask = (values: TaskFormValues) => {
+    const taskName = values.name.trim();
 
-  // Fonction d'ajout de tâche
-  const addTask = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-
-    const form = event.target as HTMLFormElement;
-    const taskInput = form.elements.namedItem("task") as HTMLInputElement;
-    const task = taskInput.value.trim();
-
-    if (task) {
+    if (taskName) {
       const newTask: Task = {
         id: tasks.length ? Math.max(...tasks.map((t) => t.id)) + 1 : 1,
-        name: task,
+        name: taskName,
         completed: false,
         createdAt: new Date(),
       };
-
       setTasks([...tasks, newTask]);
       form.reset();
     }
   };
 
-  // Fonction de suppression
-  const deleteTask = (id: number) => {
-    setTasks(tasks.filter((task) => task.id !== id));
-  };
-
-  // Préparer l'édition d'une tâche
-  const prepareEditTask = (task: Task) => {
+  const handleEditTask = (task: Task) => {
     setEditingTask(task);
     setNewTaskName(task.name);
     setDialogOpen(true);
   };
 
-  // Fonction d'édition
   const saveEditedTask = () => {
     if (editingTask && newTaskName?.trim()) {
       setTasks(
@@ -100,78 +80,57 @@ export default function Home() {
     }
   };
 
-  // Fonction pour basculer l'état terminé
-  const toggleTaskCompletion = (id: number) => {
-    setTasks(
-      tasks.map((task) =>
-        task.id === id ? { ...task, completed: !task.completed } : task
-      )
-    );
-  };
-
   return (
     <div className="flex flex-col justify-center items-center mt-6">
       <h1 className="font-bold text-6xl text-gray-800 mb-8">Todo List</h1>
       <div className="mt-6 w-full max-w-2xl px-4">
-        <form onSubmit={addTask} className="w-full">
-          <div className="flex w-full items-center gap-2">
-            <Input
-              className="flex-1 py-6"
-              type="text"
-              name="task"
-              id="task"
-              placeholder="Add new task ..."
-            />
-            <Button type="submit" className="py-6">
-              Add task
-            </Button>
-          </div>
-        </form>
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(addTask)} className="w-full">
+            <div className="flex w-full items-start gap-2">
+              <FormField
+                control={form.control}
+                name="name"
+                render={({ field }) => (
+                  <FormItem className="flex-1">
+                    <FormControl>
+                      <Input
+                        className="py-6"
+                        placeholder="Add new task ..."
+                        {...field}
+                        value={field.value || ""}
+                      />
+                    </FormControl>
+                    <div className="h-5">
+                      <FormMessage />
+                    </div>
+                  </FormItem>
+                )}
+              />
+              <div className="flex flex-col items-start">
+                <Button type="submit" className="py-6">
+                  Add task
+                </Button>
+                <div className="h-5"></div>
+              </div>
+            </div>
+          </form>
+        </Form>
         <div className="mt-6">
           <ul className="w-full">
             {tasks.map((task) => (
-              <li
+              <TaskItem
                 key={task.id}
-                className={`flex items-center justify-between p-4 border-b border-gray-300 ${
-                  task.completed ? "bg-gray-50" : ""
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={() => toggleTaskCompletion(task.id)}
-                    className={`p-1 rounded-full ${
-                      task.completed
-                        ? "bg-green-100 text-green-600"
-                        : "bg-gray-100 text-gray-400"
-                    }`}
-                  >
-                    <FaCheck size={14} />
-                  </button>
-                  <span
-                    className={`text-lg ${
-                      task.completed
-                        ? "text-gray-500 line-through"
-                        : "text-gray-800"
-                    }`}
-                  >
-                    {task.name}
-                  </span>
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => prepareEditTask(task)}
-                    className="text-blue-500 hover:text-blue-600 p-2"
-                  >
-                    <FaEdit />
-                  </button>
-                  <button
-                    onClick={() => deleteTask(task.id)}
-                    className="text-red-500 hover:text-red-600 p-2"
-                  >
-                    <FaTrash />
-                  </button>
-                </div>
-              </li>
+                task={task}
+                onToggle={(id) =>
+                  setTasks(
+                    tasks.map((t) =>
+                      t.id === id ? { ...t, completed: !t.completed } : t
+                    )
+                  )
+                }
+                onEdit={handleEditTask}
+                onDelete={(id) => setTasks(tasks.filter((t) => t.id !== id))}
+              />
             ))}
           </ul>
           {tasks.length === 0 && (
@@ -182,28 +141,13 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Dialog d'édition en dehors de la liste pour éviter les problèmes de rendu */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="sm:max-w-[425px]">
-          <DialogHeader>
-            <DialogTitle>Edit Task</DialogTitle>
-            <DialogDescription>
-              Make changes to your task here.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <Input
-              id="name"
-              value={newTaskName}
-              onChange={(e) => setNewTaskName(e.target.value)}
-              className="col-span-3"
-            />
-          </div>
-          <DialogFooter>
-            <Button onClick={saveEditedTask}>Save changes</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <EditTaskDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        taskName={newTaskName}
+        onTaskNameChange={setNewTaskName}
+        onSave={saveEditedTask}
+      />
     </div>
   );
 }
